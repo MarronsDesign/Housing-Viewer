@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Drone 360 Proposal Viewer</title>
+  <style>
+    :root {
+      --bg: #06090d;
+      --panel: rgba(8, 13, 20, 0.72);
+      --panel-strong: rgba(11, 18, 28, 0.88);
+      --panel-border: rgba(255, 255, 255, 0.14);
+      --text: rgba(255, 255, 255, 0.96);
+      --muted: rgba(255, 255, 255, 0.68);
+      --accent: #38c172;
+      --accent-strong: #24a35a;
+      --danger: #6f7b8a;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body.viewer-grab #viewerWrap { cursor: grab; }
+    body.viewer-grabbing #viewerWrap { cursor: grabbing; }
+    body.viewer-zoom-in #viewerWrap { cursor: zoom-in; }
+    body.viewer-zoom-out #viewerWrap { cursor: zoom-out; }
+
+    #viewerWrap {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      touch-action: none;
+      background: #000;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .loading {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at center, rgba(35, 50, 70, 0.78), rgba(5, 7, 10, 0.98));
+      color: rgba(255, 255, 255, 0.88);
+      font-size: 15px;
+      letter-spacing: 0.01em;
+      transition: opacity 320ms ease;
+    }
+
+    .loading.is-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .panel {
+      position: fixed;
+      z-index: 30;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .title-panel {
+      top: max(18px, env(safe-area-inset-top));
+      left: max(18px, env(safe-area-inset-left));
+      width: min(420px, calc(100vw - 36px));
+      padding: 14px 16px;
+    }
+
+    .title-panel h1 {
+      margin: 0 0 6px;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .title-panel p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .title-panel strong { color: var(--text); }
+
+    .overlay-panel {
+      top: max(18px, env(safe-area-inset-top));
+      right: max(18px, env(safe-area-inset-right));
+      width: min(330px, calc(100vw - 36px));
+      padding: 16px;
+      background: var(--panel-strong);
+    }
+
+    .overlay-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .overlay-heading {
+      margin: 0;
+      font-size: 11px;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: rgba(255,255,255,0.8);
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.84);
+      border: 1px solid rgba(255,255,255,0.1);
+      white-space: nowrap;
+    }
+
+    .status-chip::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.95;
+      box-shadow: 0 0 0 6px rgba(255,255,255,0.06);
+    }
+
+    .status-chip.is-on {
+      background: rgba(56, 193, 114, 0.18);
+      color: #75f4a7;
+      border-color: rgba(117, 244, 167, 0.28);
+    }
+
+    .overlay-panel p {
+      margin: 0 0 14px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .toggle-button {
+      width: 100%;
+      appearance: none;
+      border: 0;
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: linear-gradient(180deg, #3bd17c, #27ab60);
+      color: #fff;
+      font: inherit;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      box-shadow: 0 14px 30px rgba(39, 171, 96, 0.28);
+      transition: transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease, background 180ms ease;
+    }
+
+    .toggle-button:hover,
+    .toggle-button:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 34px rgba(39, 171, 96, 0.34);
+      outline: none;
+    }
+
+    .toggle-button.is-off {
+      background: linear-gradient(180deg, #5f6d7d, #485463);
+      box-shadow: 0 14px 30px rgba(12, 17, 24, 0.34);
+    }
+
+    .toggle-button .small {
+      display: block;
+      margin-top: 3px;
+      font-size: 12px;
+      font-weight: 600;
+      opacity: 0.82;
+    }
+
+    .opacity-panel {
+      overflow: hidden;
+      max-height: 0;
+      opacity: 0;
+      transition: max-height 260ms ease, opacity 220ms ease, margin-top 220ms ease;
+      margin-top: 0;
+    }
+
+    .opacity-panel.is-visible {
+      max-height: 180px;
+      opacity: 1;
+      margin-top: 14px;
+    }
+
+    .opacity-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .opacity-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .opacity-value {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.18);
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid #27ab60;
+      box-shadow: 0 6px 15px rgba(0,0,0,0.25);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid #27ab60;
+      box-shadow: 0 6px 15px rgba(0,0,0,0.25);
+    }
+
+    .controls-panel {
+      left: max(18px, env(safe-area-inset-left));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      padding: 10px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .control-button {
+      appearance: none;
+      width: 46px;
+      height: 46px;
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      background: rgba(8, 13, 20, 0.82);
+      color: var(--text);
+      font: inherit;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-grid;
+      place-items: center;
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .control-button:hover,
+    .control-button:focus-visible {
+      background: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    .control-button.wide {
+      width: auto;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .feedback {
+      position: fixed;
+      left: 50%;
+      bottom: max(82px, calc(env(safe-area-inset-bottom) + 82px));
+      transform: translate(-50%, 8px);
+      z-index: 35;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: rgba(8, 13, 20, 0.78);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.9);
+      font-size: 12px;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .feedback.is-visible {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    @media (max-width: 760px) {
+      .title-panel {
+        top: 12px;
+        left: 12px;
+        width: calc(100vw - 24px);
+      }
+
+      .overlay-panel {
+        top: auto;
+        bottom: 84px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+      }
+
+      .controls-panel {
+        left: 12px;
+        bottom: 12px;
+        right: 12px;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+
+      .feedback {
+        bottom: 148px;
+        width: calc(100vw - 24px);
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body class="viewer-grab">
+  <div id="viewerWrap" aria-label="Interactive 360 proposal viewer"></div>
+
+  <div class="loading" id="loadingMessage">Loading 360 viewer…</div>
+
+  <section class="panel title-panel" aria-label="Viewer instructions">
+    <h1>Drone 360 Proposal Viewer</h1>
+    <p><strong>Pan:</strong> click and drag. <strong>Zoom:</strong> use the mouse wheel, pinch on mobile, or the + and - buttons. Use the toggle to show or hide the proposed housing overlay.</p>
+  </section>
+
+  <aside class="panel overlay-panel" aria-label="Overlay controls">
+    <div class="overlay-topline">
+      <h2 class="overlay-heading">Proposed housing overlay</h2>
+      <span class="status-chip" id="overlayStatus">Off</span>
+    </div>
+    <p>Switch the proposed housing on and off. When it is on, you can adjust the overlay strength below.</p>
+    <button id="overlayToggle" class="toggle-button is-off" type="button" aria-pressed="false">
+      Show Proposed Housing
+      <span class="small">Currently off</span>
+    </button>
+
+    <div id="opacityPanel" class="opacity-panel" aria-hidden="true">
+      <div class="opacity-label-row">
+        <span class="opacity-label">Overlay opacity</span>
+        <span class="opacity-value" id="opacityValue">80%</span>
+      </div>
+      <input id="opacitySlider" type="range" min="0" max="100" value="80" step="1" />
+    </div>
+  </aside>
+
+  <div class="panel controls-panel" aria-label="Viewer controls">
+    <button class="control-button" id="zoomIn" type="button" aria-label="Zoom in">+</button>
+    <button class="control-button" id="zoomOut" type="button" aria-label="Zoom out">−</button>
+    <button class="control-button wide" id="resetView" type="button">Reset view</button>
+    <button class="control-button wide" id="fullscreenToggle" type="button">Full screen</button>
+  </div>
+
+  <div class="feedback" id="feedbackBubble" aria-live="polite"></div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js';
+
+    const viewerWrap = document.getElementById('viewerWrap');
+    const loadingMessage = document.getElementById('loadingMessage');
+    const overlayToggle = document.getElementById('overlayToggle');
+    const overlayStatus = document.getElementById('overlayStatus');
+    const opacityPanel = document.getElementById('opacityPanel');
+    const opacitySlider = document.getElementById('opacitySlider');
+    const opacityValue = document.getElementById('opacityValue');
+    const zoomInButton = document.getElementById('zoomIn');
+    const zoomOutButton = document.getElementById('zoomOut');
+    const resetViewButton = document.getElementById('resetView');
+    const fullscreenToggle = document.getElementById('fullscreenToggle');
+    const feedbackBubble = document.getElementById('feedbackBubble');
+
+    const START = {
+      yaw: 0,
+      pitch: 0,
+      fov: 80
+    };
+
+    const LIMITS = {
+      minFov: 20,
+      maxFov: 100,
+      minPitch: -85,
+      maxPitch: 85
+    };
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(START.fov, window.innerWidth / window.innerHeight, 1, 1100);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    viewerWrap.appendChild(renderer.domElement);
+
+    let lon = START.yaw;
+    let lat = START.pitch;
+    let targetLon = START.yaw;
+    let targetLat = START.pitch;
+    let targetFov = START.fov;
+
+    let isDragging = false;
+    let isTwoFinger = false;
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+    let pointerStartLon = 0;
+    let pointerStartLat = 0;
+    let pinchStartDistance = 0;
+    let pinchStartFov = START.fov;
+    let zoomCursorTimer = null;
+    let feedbackTimer = null;
+
+    let overlayEnabled = false;
+
+    const loadingManager = new THREE.LoadingManager();
+    const textureLoader = new THREE.TextureLoader(loadingManager);
+
+    loadingManager.onLoad = () => {
+      loadingMessage.classList.add('is-hidden');
+      window.setTimeout(() => loadingMessage.remove(), 360);
+      renderOnce();
+    };
+
+    loadingManager.onError = (url) => {
+      loadingMessage.textContent = `Could not load ${url}. Check that panorama.jpg and overlay.png are in the same folder as this page.`;
+    };
+
+    const baseGeometry = new THREE.SphereGeometry(500, 120, 80);
+    baseGeometry.scale(-1, 1, 1);
+
+    const overlayGeometry = new THREE.SphereGeometry(499.2, 120, 80);
+    overlayGeometry.scale(-1, 1, 1);
+
+    const baseTexture = textureLoader.load('panorama.jpg');
+    baseTexture.colorSpace = THREE.SRGBColorSpace;
+    baseTexture.minFilter = THREE.LinearFilter;
+
+    const overlayTexture = textureLoader.load('overlay.png');
+    overlayTexture.colorSpace = THREE.SRGBColorSpace;
+    overlayTexture.minFilter = THREE.LinearFilter;
+
+    const baseMaterial = new THREE.MeshBasicMaterial({ map: baseTexture });
+    const overlayMaterial = new THREE.MeshBasicMaterial({
+      map: overlayTexture,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      side: THREE.FrontSide
+    });
+
+    const panoramaMesh = new THREE.Mesh(baseGeometry, baseMaterial);
+    const overlayMesh = new THREE.Mesh(overlayGeometry, overlayMaterial);
+    overlayMesh.visible = overlayEnabled;
+    overlayMesh.renderOrder = 1;
+
+    scene.add(panoramaMesh);
+    scene.add(overlayMesh);
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function showFeedback(message) {
+      feedbackBubble.textContent = message;
+      feedbackBubble.classList.add('is-visible');
+      clearTimeout(feedbackTimer);
+      feedbackTimer = setTimeout(() => {
+        feedbackBubble.classList.remove('is-visible');
+      }, 1100);
+    }
+
+    function setBodyCursorState(state) {
+      document.body.classList.remove('viewer-grab', 'viewer-grabbing', 'viewer-zoom-in', 'viewer-zoom-out');
+      document.body.classList.add(state);
+    }
+
+    function pulseZoomCursor(direction) {
+      clearTimeout(zoomCursorTimer);
+      setBodyCursorState(direction === 'in' ? 'viewer-zoom-in' : 'viewer-zoom-out');
+      zoomCursorTimer = setTimeout(() => {
+        setBodyCursorState(isDragging ? 'viewer-grabbing' : 'viewer-grab');
+      }, 180);
+    }
+
+    function updateOverlayUI() {
+      overlayMesh.visible = overlayEnabled;
+      overlayToggle.setAttribute('aria-pressed', String(overlayEnabled));
+      overlayToggle.classList.toggle('is-off', !overlayEnabled);
+      overlayStatus.textContent = overlayEnabled ? 'On' : 'Off';
+      overlayStatus.classList.toggle('is-on', overlayEnabled);
+      opacityPanel.classList.toggle('is-visible', overlayEnabled);
+      opacityPanel.setAttribute('aria-hidden', String(!overlayEnabled));
+
+      if (overlayEnabled) {
+        overlayToggle.innerHTML = 'Hide Proposed Housing<span class="small">Currently on</span>';
+      } else {
+        overlayToggle.innerHTML = 'Show Proposed Housing<span class="small">Currently off</span>';
+      }
+    }
+
+    function updateOpacityUI() {
+      opacityValue.textContent = `${opacitySlider.value}%`;
+      overlayMaterial.opacity = Number(opacitySlider.value) / 100;
+    }
+
+    function resetView() {
+      targetLon = START.yaw;
+      targetLat = START.pitch;
+      targetFov = START.fov;
+      showFeedback('View reset');
+    }
+
+    function adjustZoom(amount) {
+      targetFov = clamp(targetFov + amount, LIMITS.minFov, LIMITS.maxFov);
+    }
+
+    function handleWheel(event) {
+      event.preventDefault();
+      const step = Math.sign(event.deltaY) * Math.min(4.5, Math.max(1.5, Math.abs(event.deltaY) * 0.015));
+      adjustZoom(step);
+      pulseZoomCursor(step < 0 ? 'in' : 'out');
+    }
+
+    function getTouchDistance(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt((dx * dx) + (dy * dy));
+    }
+
+    function onPointerDown(event) {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      isDragging = true;
+      isTwoFinger = false;
+      pointerStartX = event.clientX;
+      pointerStartY = event.clientY;
+      pointerStartLon = targetLon;
+      pointerStartLat = targetLat;
+      setBodyCursorState('viewer-grabbing');
+      viewerWrap.setPointerCapture?.(event.pointerId);
+    }
+
+    function onPointerMove(event) {
+      if (!isDragging || isTwoFinger) return;
+      const deltaX = event.clientX - pointerStartX;
+      const deltaY = event.clientY - pointerStartY;
+      targetLon = pointerStartLon - (deltaX * 0.11);
+      targetLat = clamp(pointerStartLat + (deltaY * 0.11), LIMITS.minPitch, LIMITS.maxPitch);
+    }
+
+    function onPointerUp(event) {
+      isDragging = false;
+      isTwoFinger = false;
+      setBodyCursorState('viewer-grab');
+      viewerWrap.releasePointerCapture?.(event.pointerId);
+    }
+
+    function onTouchStart(event) {
+      if (event.touches.length === 1) {
+        isDragging = true;
+        isTwoFinger = false;
+        pointerStartX = event.touches[0].clientX;
+        pointerStartY = event.touches[0].clientY;
+        pointerStartLon = targetLon;
+        pointerStartLat = targetLat;
+        setBodyCursorState('viewer-grabbing');
+      } else if (event.touches.length === 2) {
+        isDragging = false;
+        isTwoFinger = true;
+        pinchStartDistance = getTouchDistance(event.touches);
+        pinchStartFov = targetFov;
+      }
+    }
+
+    function onTouchMove(event) {
+      event.preventDefault();
+
+      if (event.touches.length === 1 && isDragging) {
+        const deltaX = event.touches[0].clientX - pointerStartX;
+        const deltaY = event.touches[0].clientY - pointerStartY;
+        targetLon = pointerStartLon - (deltaX * 0.11);
+        targetLat = clamp(pointerStartLat + (deltaY * 0.11), LIMITS.minPitch, LIMITS.maxPitch);
+      } else if (event.touches.length === 2) {
+        isTwoFinger = true;
+        const currentDistance = getTouchDistance(event.touches);
+        const distanceDelta = currentDistance - pinchStartDistance;
+        targetFov = clamp(pinchStartFov - (distanceDelta * 0.055), LIMITS.minFov, LIMITS.maxFov);
+      }
+    }
+
+    function onTouchEnd(event) {
+      if (event.touches.length === 0) {
+        isDragging = false;
+        isTwoFinger = false;
+        setBodyCursorState('viewer-grab');
+      } else if (event.touches.length === 1) {
+        isDragging = true;
+        isTwoFinger = false;
+        pointerStartX = event.touches[0].clientX;
+        pointerStartY = event.touches[0].clientY;
+        pointerStartLon = targetLon;
+        pointerStartLat = targetLat;
+      }
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.();
+      } else {
+        document.exitFullscreen?.();
+      }
+    }
+
+    function updateFullscreenLabel() {
+      fullscreenToggle.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+    }
+
+    function renderOnce() {
+      renderer.render(scene, camera);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      lon += (targetLon - lon) * 0.12;
+      lat += (targetLat - lat) * 0.12;
+      camera.fov += (targetFov - camera.fov) * 0.14;
+      camera.updateProjectionMatrix();
+
+      const phi = THREE.MathUtils.degToRad(90 - lat);
+      const theta = THREE.MathUtils.degToRad(lon);
+
+      const target = new THREE.Vector3();
+      target.setFromSphericalCoords(500, phi, theta);
+      camera.lookAt(target);
+
+      renderer.render(scene, camera);
+    }
+
+    viewerWrap.addEventListener('wheel', handleWheel, { passive: false });
+    viewerWrap.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    viewerWrap.addEventListener('touchstart', onTouchStart, { passive: false });
+    viewerWrap.addEventListener('touchmove', onTouchMove, { passive: false });
+    viewerWrap.addEventListener('touchend', onTouchEnd, { passive: false });
+    viewerWrap.addEventListener('touchcancel', onTouchEnd, { passive: false });
+    viewerWrap.addEventListener('mouseleave', () => {
+      if (!isDragging) setBodyCursorState('viewer-grab');
+    });
+    window.addEventListener('blur', () => {
+      isDragging = false;
+      isTwoFinger = false;
+      setBodyCursorState('viewer-grab');
+    });
+
+    overlayToggle.addEventListener('click', () => {
+      overlayEnabled = !overlayEnabled;
+      updateOverlayUI();
+      showFeedback(overlayEnabled ? 'Proposed housing shown' : 'Proposed housing hidden');
+    });
+
+    opacitySlider.addEventListener('input', () => {
+      updateOpacityUI();
+    });
+
+    zoomInButton.addEventListener('click', () => {
+      adjustZoom(-6);
+      pulseZoomCursor('in');
+    });
+
+    zoomOutButton.addEventListener('click', () => {
+      adjustZoom(6);
+      pulseZoomCursor('out');
+    });
+
+    resetViewButton.addEventListener('click', resetView);
+    fullscreenToggle.addEventListener('click', toggleFullscreen);
+    document.addEventListener('fullscreenchange', updateFullscreenLabel);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderOnce();
+    });
+
+    updateOverlayUI();
+    updateOpacityUI();
+    updateFullscreenLabel();
+    animate();
+  </script>
+</body>
+</html>
