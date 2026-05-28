@@ -36,6 +36,70 @@
     body.viewer-zoom-in #viewerWrap { cursor: zoom-in; }
     body.viewer-zoom-out #viewerWrap { cursor: zoom-out; }
 
+    body.mobile-drawer-open {
+      overflow: hidden;
+    }
+
+    .mobile-drawer-button {
+      display: none;
+      position: fixed;
+      z-index: 55;
+      top: max(12px, env(safe-area-inset-top));
+      right: max(12px, env(safe-area-inset-right));
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 999px;
+      padding: 11px 14px;
+      background: rgba(8, 13, 20, 0.82);
+      color: rgba(255, 255, 255, 0.96);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .mobile-drawer-button.is-on {
+      background: rgba(36, 163, 90, 0.92);
+      border-color: rgba(117, 244, 167, 0.45);
+    }
+
+    .mobile-drawer-grip {
+      display: none;
+      width: 46px;
+      height: 5px;
+      border-radius: 999px;
+      margin: 0 auto 12px;
+      background: rgba(255, 255, 255, 0.26);
+    }
+
+    .mobile-close {
+      display: none;
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.9);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .mobile-controls-row {
+      display: none;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
     #viewerWrap {
       position: fixed;
       inset: 0;
@@ -338,31 +402,83 @@
 
     @media (max-width: 760px) {
       .title-panel {
-        top: 12px;
-        left: 12px;
-        width: calc(100vw - 24px);
+        display: none;
+      }
+
+      .mobile-drawer-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .mobile-drawer-grip,
+      .mobile-close {
+        display: block;
       }
 
       .overlay-panel {
         top: auto;
-        bottom: 84px;
-        right: 12px;
-        left: 12px;
-        width: auto;
+        bottom: 0;
+        right: 0;
+        left: 0;
+        width: 100%;
+        max-height: min(76vh, 520px);
+        overflow-y: auto;
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 24px 24px 0 0;
+        padding: 14px 16px max(18px, env(safe-area-inset-bottom));
+        transform: translateY(calc(100% + 18px));
+        opacity: 0;
+        pointer-events: none;
+        transition: transform 260ms ease, opacity 220ms ease;
+      }
+
+      body.mobile-drawer-open .overlay-panel {
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .overlay-topline {
+        margin-bottom: 12px;
+      }
+
+      .overlay-heading {
+        font-size: 10px;
+      }
+
+      .toggle-button {
+        padding: 14px 16px;
+        font-size: 15px;
+      }
+
+      .mobile-controls-row {
+        display: flex;
       }
 
       .controls-panel {
-        left: 12px;
-        bottom: 12px;
-        right: 12px;
-        justify-content: flex-start;
-        flex-wrap: wrap;
+        display: none;
+      }
+
+      .control-button {
+        width: 44px;
+        height: 44px;
+      }
+
+      .control-button.wide {
+        flex: 1 1 auto;
+        min-width: 110px;
       }
 
       .feedback {
-        bottom: 148px;
-        width: calc(100vw - 24px);
+        top: max(56px, calc(env(safe-area-inset-top) + 56px));
+        bottom: auto;
+        width: auto;
+        max-width: calc(100vw - 24px);
         text-align: center;
+        white-space: nowrap;
       }
     }
   </style>
@@ -372,15 +488,20 @@
 
   <div class="loading" id="loadingMessage">Loading 360 viewer…</div>
 
+  <button class="mobile-drawer-button" id="mobileDrawerToggle" type="button" aria-expanded="false" aria-controls="overlayPanel">
+    Controls / Proposal
+  </button>
+
   <section class="panel title-panel" aria-label="Viewer instructions">
     <h1>Drone 360 Proposal Viewer</h1>
     <p><strong>Pan:</strong> click and drag. <strong>Zoom:</strong> use the mouse wheel, pinch on mobile, or the + and - buttons. Use the toggle to show or hide the proposed housing overlay.</p>
   </section>
 
-  <aside class="panel overlay-panel" aria-label="Overlay controls">
+  <aside class="panel overlay-panel" id="overlayPanel" aria-label="Overlay controls">
     <div class="overlay-topline">
       <h2 class="overlay-heading">Proposed housing overlay</h2>
       <span class="status-chip" id="overlayStatus">Off</span>
+      <button class="mobile-close" id="mobileDrawerClose" type="button">Close</button>
     </div>
     <p>Switch the proposed housing on and off. When it is on, you can adjust the overlay strength below.</p>
     <button id="overlayToggle" class="toggle-button is-off" type="button" aria-pressed="false">
@@ -394,6 +515,13 @@
         <span class="opacity-value" id="opacityValue">80%</span>
       </div>
       <input id="opacitySlider" type="range" min="0" max="100" value="80" step="1" />
+    </div>
+
+    <div class="mobile-controls-row" aria-label="Mobile viewer controls">
+      <button class="control-button" id="mobileZoomIn" type="button" aria-label="Zoom in">+</button>
+      <button class="control-button" id="mobileZoomOut" type="button" aria-label="Zoom out">−</button>
+      <button class="control-button wide" id="mobileResetView" type="button">Reset view</button>
+      <button class="control-button wide" id="mobileFullscreenToggle" type="button">Full screen</button>
     </div>
   </aside>
 
@@ -420,6 +548,12 @@
     const zoomOutButton = document.getElementById('zoomOut');
     const resetViewButton = document.getElementById('resetView');
     const fullscreenToggle = document.getElementById('fullscreenToggle');
+    const mobileDrawerToggle = document.getElementById('mobileDrawerToggle');
+    const mobileDrawerClose = document.getElementById('mobileDrawerClose');
+    const mobileZoomInButton = document.getElementById('mobileZoomIn');
+    const mobileZoomOutButton = document.getElementById('mobileZoomOut');
+    const mobileResetViewButton = document.getElementById('mobileResetView');
+    const mobileFullscreenToggle = document.getElementById('mobileFullscreenToggle');
     const feedbackBubble = document.getElementById('feedbackBubble');
 
     const START = {
@@ -461,6 +595,7 @@
     let feedbackTimer = null;
 
     let overlayEnabled = false;
+    let mobileDrawerOpen = false;
 
     const loadingManager = new THREE.LoadingManager();
     const textureLoader = new THREE.TextureLoader(loadingManager);
@@ -519,6 +654,27 @@
       }, 1100);
     }
 
+    function updateMobileDrawerButton() {
+      if (!mobileDrawerToggle) return;
+
+      if (mobileDrawerOpen) {
+        mobileDrawerToggle.textContent = 'Close controls';
+      } else if (overlayEnabled) {
+        mobileDrawerToggle.textContent = 'Proposal On';
+      } else {
+        mobileDrawerToggle.textContent = 'Controls / Proposal';
+      }
+
+      mobileDrawerToggle.classList.toggle('is-on', overlayEnabled);
+      mobileDrawerToggle.setAttribute('aria-expanded', String(mobileDrawerOpen));
+    }
+
+    function setMobileDrawer(open) {
+      mobileDrawerOpen = open;
+      document.body.classList.toggle('mobile-drawer-open', mobileDrawerOpen);
+      updateMobileDrawerButton();
+    }
+
     function setBodyCursorState(state) {
       document.body.classList.remove('viewer-grab', 'viewer-grabbing', 'viewer-zoom-in', 'viewer-zoom-out');
       document.body.classList.add(state);
@@ -546,6 +702,8 @@
       } else {
         overlayToggle.innerHTML = 'Show Proposed Housing<span class="small">Currently off</span>';
       }
+
+      updateMobileDrawerButton();
     }
 
     function updateOpacityUI() {
@@ -661,7 +819,9 @@
     }
 
     function updateFullscreenLabel() {
-      fullscreenToggle.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+      const label = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+      fullscreenToggle.textContent = label;
+      if (mobileFullscreenToggle) mobileFullscreenToggle.textContent = label;
     }
 
     function renderOnce() {
@@ -724,8 +884,34 @@
       pulseZoomCursor('out');
     });
 
+    mobileZoomInButton?.addEventListener('click', () => {
+      adjustZoom(-6);
+      pulseZoomCursor('in');
+    });
+
+    mobileZoomOutButton?.addEventListener('click', () => {
+      adjustZoom(6);
+      pulseZoomCursor('out');
+    });
+
     resetViewButton.addEventListener('click', resetView);
+    mobileResetViewButton?.addEventListener('click', resetView);
+
     fullscreenToggle.addEventListener('click', toggleFullscreen);
+    mobileFullscreenToggle?.addEventListener('click', toggleFullscreen);
+
+    mobileDrawerToggle?.addEventListener('click', () => {
+      setMobileDrawer(!mobileDrawerOpen);
+    });
+
+    mobileDrawerClose?.addEventListener('click', () => {
+      setMobileDrawer(false);
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') setMobileDrawer(false);
+    });
+
     document.addEventListener('fullscreenchange', updateFullscreenLabel);
 
     window.addEventListener('resize', () => {
@@ -739,6 +925,7 @@
     updateOverlayUI();
     updateOpacityUI();
     updateFullscreenLabel();
+    updateMobileDrawerButton();
     animate();
   </script>
 </body>
