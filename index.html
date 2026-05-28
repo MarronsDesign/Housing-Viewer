@@ -593,7 +593,7 @@
       if (!isDragging || isTwoFinger) return;
       const deltaX = event.clientX - pointerStartX;
       const deltaY = event.clientY - pointerStartY;
-      targetLon = pointerStartLon - (deltaX * 0.11);
+      targetLon = pointerStartLon + (deltaX * 0.11);
       targetLat = clamp(pointerStartLat + (deltaY * 0.11), LIMITS.minPitch, LIMITS.maxPitch);
     }
 
@@ -627,7 +627,7 @@
       if (event.touches.length === 1 && isDragging) {
         const deltaX = event.touches[0].clientX - pointerStartX;
         const deltaY = event.touches[0].clientY - pointerStartY;
-        targetLon = pointerStartLon - (deltaX * 0.11);
+        targetLon = pointerStartLon + (deltaX * 0.11);
         targetLat = clamp(pointerStartLat + (deltaY * 0.11), LIMITS.minPitch, LIMITS.maxPitch);
       } else if (event.touches.length === 2) {
         isTwoFinger = true;
